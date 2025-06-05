@@ -360,13 +360,21 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler,
 #endif
         
         // Open the camera device
-        if #available(iOS 13.0, *) {
-            var cameraDevice = AVCaptureDevice.default(.builtInUltraWideCamera, for: .video, position: position)
-                    
-            if cameraDevice == nil {
-                cameraDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position);
+        if #available(iOS 10.2, *) {
+            let deviceTypes: [AVCaptureDevice.DeviceType]
+            if #available(iOS 13.0, *) {
+                deviceTypes = [.builtInTripleCamera, .builtInDualWideCamera, .builtInUltraWideCamera]
+            } else {
+                deviceTypes = [.builtInWideAngleCamera, .builtInDualCamera]
             }
-            device = cameraDevice
+
+            let session = AVCaptureDevice.DiscoverySession(
+                deviceTypes: deviceTypes,
+                mediaType: .video,
+                position: position
+            )
+            
+            device = session.devices.first
             
         } else {
             device = AVCaptureDevice.devices(for: .video).filter({$0.position == position}).first
@@ -444,6 +452,21 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler,
                     dimensions = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
                 } else {
                     dimensions = CMVideoDimensions()
+                }
+
+                // Set continuous autofocus if supported
+                if let device = self.device {
+                    #if os(iOS)
+                    if device.isFocusModeSupported(.continuousAutoFocus) {
+                        do {
+                            try device.lockForConfiguration()
+                            device.focusMode = .continuousAutoFocus
+                            device.unlockForConfiguration()
+                        } catch {
+                            print("MobileScanner: Failed to set continuous autofocus: \(error.localizedDescription)")
+                        }
+                    }
+                    #endif
                 }
 
                 // Turn on the torch if requested.
