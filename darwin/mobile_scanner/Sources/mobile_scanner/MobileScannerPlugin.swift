@@ -361,10 +361,22 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler,
         
         // Open the camera device
         if #available(iOS 10.2, *) {
-            let deviceTypes: [AVCaptureDevice.DeviceType]
+            var deviceTypes: [AVCaptureDevice.DeviceType]
             if #available(iOS 13.0, *) {
-                deviceTypes = [.builtInTripleCamera, .builtInDualWideCamera, .builtInUltraWideCamera]
+#if os(iOS)
+                if self.isDeviceOlderThaniPhone13() {
+                    // Older than iPhone 13: use builtInWideAngleCamera
+                    deviceTypes = [.builtInWideAngleCamera]
+                } else {
+                    // iPhone 13 or newer: prefer builtInUltraWideCamera, fallback to builtInWideAngleCamera
+                    deviceTypes = [.builtInUltraWideCamera, .builtInWideAngleCamera]
+                }
+#else
+                // For macOS, default to wide angle or a generic list.
+                deviceTypes = [.builtInWideAngleCamera]
+#endif
             } else {
+                // For iOS 10.2 to 12.x
                 deviceTypes = [.builtInWideAngleCamera, .builtInDualCamera]
             }
 
@@ -870,6 +882,36 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler,
             }
         }
     }
+
+#if os(iOS)
+    private func getMachineIdentifier() -> String {
+        var systemInfo = utsname()
+        uname(&systemInfo)
+        let machineMirror = Mirror(reflecting: systemInfo.machine)
+        let identifier = machineMirror.children.reduce("") { id, element in
+            guard let value = element.value as? Int8, value != 0 else { return id }
+            return id + String(UnicodeScalar(UInt8(value)))
+        }
+        return identifier
+    }
+
+    private func isDeviceOlderThaniPhone13() -> Bool {
+        let identifier = getMachineIdentifier() // e.g., "iPhone13,2" (iPhone 12) or "iPhone14,5" (iPhone 13)
+        if identifier.starts(with: "iPhone") {
+            // Extracts the major version number after "iPhone"
+            // e.g., "iPhone13,2" -> "13,2" -> "13"
+            let components = identifier.dropFirst("iPhone".count).split(separator: ",")
+            if let majorVersionString = components.first, let majorVersion = Int(majorVersionString) {
+                // iPhone 13 series have major version 14 (e.g., iPhone14,x)
+                // iPhone 12 series have major version 13 (e.g., iPhone13,x)
+                // So, if majorVersion < 14, it's older than the iPhone 13 series.
+                return majorVersion < 14
+            }
+        }
+        // Default: If not an iPhone or cannot parse, assume it's older to ensure wide-angle camera is tried.
+        return true
+    }
+#endif
 
     // Observer for torch state
     public override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
